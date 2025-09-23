@@ -1,360 +1,362 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, ReferenceLine } from "recharts";
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Macro Dashboard</title>
+  <!-- Tailwind CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React 18 UMD -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <!-- Recharts UMD -->
+  <script src="https://unpkg.com/recharts/umd/Recharts.min.js"></script>
+  <!-- Babel (브라우저에서 JSX 변환) -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-neutral-50 text-neutral-900">
+  <div id="root"></div>
 
-/**
- * Macro Dashboard (Single-file React)
- * - Enter your FRED API key (stored in localStorage)
- * - Fetches core indicators and shows Latest / Δ1m / Δ3m
- * - Click an indicator to open a responsive chart (mobile/desktop)
- * - Works as a standalone page (no backend). Deploy to any static hosting.
- *
- * Tailwind is available by default in the canvas runtime.
- */
+  <script type="text/babel">
+    const { useEffect, useMemo, useState } = React;
+    const { LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, ReferenceLine } = Recharts;
 
-// ---- Indicator definitions ----
-const INDICATORS = [
-  // Macro & Rates
-  { key: "PAYEMS", label: "NFP", desc: "Nonfarm Payrolls (thous)", type: "level", frequencyHint: "monthly" },
-  { key: "ICSA", label: "Initial Claims", desc: "Weekly Initial Jobless Claims", type: "level", frequencyHint: "weekly" },
-  { key: "AWHAEMAN", label: "Avg Hours – Manufacturing", desc: "Manufacturing Average Weekly Hours", type: "level", frequencyHint: "monthly" },
-  { key: "NAPMNOI", label: "ISM New Orders", desc: "ISM Manufacturing New Orders Index", type: "level", frequencyHint: "monthly" },
-  { key: "CPIAUCSL", label: "CPI YoY", desc: "CPI (YoY, headline)", type: "yoy", frequencyHint: "monthly" },
-  { key: "T10YIE", label: "10Y Breakeven", desc: "10Y Inflation Expectation", type: "level", frequencyHint: "daily" },
-  { key: "DGS2", label: "2Y Yield", desc: "2-Year Treasury Yield (%)", type: "level", frequencyHint: "daily" },
-  { key: "DGS10", label: "10Y Yield", desc: "10-Year Treasury Yield (%)", type: "level", frequencyHint: "daily" },
-  { key: "SPREAD_10Y_2Y", label: "10Y - 2Y Spread", desc: "Term Spread (10Y minus 2Y)", type: "derived", base: ["DGS10", "DGS2"], frequencyHint: "daily" },
-  { key: "WALCL", label: "Fed Balance Sheet", desc: "Federal Reserve Total Assets ($bn)", type: "level", frequencyHint: "weekly" },
-  { key: "RRPONTSYD", label: "ON RRP Balance", desc: "Overnight Reverse Repo ($bn)", type: "level", frequencyHint: "daily" },
-  { key: "BAMLH0A0HYM2", label: "HY OAS", desc: "High Yield OAS (bps)", type: "level", frequencyHint: "daily" },
-  { key: "DTWEXBGS", label: "Dollar Index", desc: "Trade-Weighted Dollar Index", type: "level", frequencyHint: "daily" },
-  { key: "GOLDPMGBD228NLBM", label: "Gold PM Fix", desc: "London Gold PM Fix ($/oz)", type: "level", frequencyHint: "daily" },
-  // Equity Indices
-  { key: "SP500", label: "S&P 500", desc: "S&P 500 Index (price)", type: "level", frequencyHint: "daily" },
-  { key: "NASDAQCOM", label: "Nasdaq Composite", desc: "Nasdaq Composite Index", type: "level", frequencyHint: "daily" },
-  { key: "DJIA", label: "Dow Jones Industrial Avg", desc: "Dow Jones Industrial Average", type: "level", frequencyHint: "daily" },
-  { key: "WILL5000INDFC", label: "Wilshire 5000", desc: "Wilshire 5000 Total Market (Full Cap)", type: "level", frequencyHint: "daily" },
-  { key: "VIXCLS", label: "VIX", desc: "CBOE Volatility Index", type: "level", frequencyHint: "daily" },
-];
+    // ===== 설정 =====
+    const START_DATE = "2019-01-01";
+    const LS_KEY = "FRED_API_KEY";
 
-const START_DATE = "2019-01-01";
-const LS_KEY = "FRED_API_KEY";
+    // 지표 정의 (라벨에 ID 표기 제거)
+    const INDICATORS = [
+      // Macro & Rates
+      { key: "PAYEMS", label: "NFP", desc: "Nonfarm Payrolls (thous)", type: "level", frequencyHint: "monthly" },
+      { key: "ICSA", label: "Initial Claims", desc: "Weekly Initial Jobless Claims", type: "level", frequencyHint: "weekly" },
+      { key: "AWHAEMAN", label: "Avg Hours – Manufacturing", desc: "Manufacturing Average Weekly Hours", type: "level", frequencyHint: "monthly" },
+      { key: "NAPMNOI", label: "ISM New Orders", desc: "ISM Manufacturing New Orders Index", type: "level", frequencyHint: "monthly" },
+      { key: "CPIAUCSL", label: "CPI YoY", desc: "CPI (YoY, headline)", type: "yoy", frequencyHint: "monthly" },
+      { key: "T10YIE", label: "10Y Breakeven", desc: "10Y Inflation Expectation", type: "level", frequencyHint: "daily" },
+      { key: "DGS2", label: "2Y Yield", desc: "2-Year Treasury Yield (%)", type: "level", frequencyHint: "daily" },
+      { key: "DGS10", label: "10Y Yield", desc: "10-Year Treasury Yield (%)", type: "level", frequencyHint: "daily" },
+      { key: "SPREAD_10Y_2Y", label: "10Y - 2Y Spread", desc: "Term Spread (10Y minus 2Y)", type: "derived", base: ["DGS10", "DGS2"], frequencyHint: "daily" },
+      { key: "WALCL", label: "Fed Balance Sheet", desc: "Federal Reserve Total Assets ($bn)", type: "level", frequencyHint: "weekly" },
+      { key: "RRPONTSYD", label: "ON RRP Balance", desc: "Overnight Reverse Repo ($bn)", type: "level", frequencyHint: "daily" },
+      { key: "BAMLH0A0HYM2", label: "HY OAS", desc: "High Yield OAS (bps)", type: "level", frequencyHint: "daily" },
+      { key: "DTWEXBGS", label: "Dollar Index", desc: "Trade-Weighted Dollar Index", type: "level", frequencyHint: "daily" },
+      { key: "GOLDPMGBD228NLBM", label: "Gold PM Fix", desc: "London Gold PM Fix ($/oz)", type: "level", frequencyHint: "daily" },
+      // Equity Indices
+      { key: "SP500", label: "S&P 500", desc: "S&P 500 Index (price)", type: "level", frequencyHint: "daily" },
+      { key: "NASDAQCOM", label: "Nasdaq Composite", desc: "Nasdaq Composite Index", type: "level", frequencyHint: "daily" },
+      { key: "DJIA", label: "Dow Jones Industrial Avg", desc: "Dow Jones Industrial Average", type: "level", frequencyHint: "daily" },
+      { key: "WILL5000INDFC", label: "Wilshire 5000", desc: "Wilshire 5000 Total Market (Full Cap)", type: "level", frequencyHint: "daily" },
+      { key: "VIXCLS", label: "VIX", desc: "CBOE Volatility Index", type: "level", frequencyHint: "daily" },
+    ];
 
-function fmt(num, digits = 2) {
-  if (num === null || num === undefined || Number.isNaN(num)) return "–";
-  return Number(num).toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: digits });
-}
-
-function fmtDate(dStr) {
-  if (!dStr) return "";
-  const d = new Date(dStr);
-  if (Number.isNaN(d.getTime())) return dStr;
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-function days(n) { return 24 * 60 * 60 * 1000 * n; }
-
-async function fetchFredSeries(seriesId, apiKey, start = START_DATE) {
-  const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&api_key=${apiKey}&file_type=json&observation_start=${start}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`FRED fetch failed: ${seriesId}`);
-  const json = await res.json();
-  const obs = (json.observations || [])
-    .filter(o => o.value !== "." && o.value !== null)
-    .map(o => ({ date: o.date, value: parseFloat(o.value) }))
-    .filter(o => !Number.isNaN(o.value));
-  return obs;
-}
-
-function valueAtOrBefore(observations, targetDate) {
-  // Find the last observation with date <= targetDate
-  for (let i = observations.length - 1; i >= 0; i--) {
-    const d = new Date(observations[i].date);
-    if (d.getTime() <= targetDate.getTime()) return observations[i].value;
-  }
-  return null;
-}
-
-function yoyFrom(observations) {
-  if (!observations || observations.length < 13) return null;
-  const last = observations[observations.length - 1];
-  const lastD = new Date(last.date);
-  let prev12 = null;
-  // find same month prev year
-  for (let i = observations.length - 2; i >= 0; i--) {
-    const d = new Date(observations[i].date);
-    if (d.getUTCFullYear() === lastD.getUTCFullYear() - 1 && d.getUTCMonth() === lastD.getUTCMonth()) {
-      prev12 = observations[i].value;
-      break;
+    // ===== 유틸 =====
+    function fmt(num, digits = 2) {
+      if (num === null || num === undefined || Number.isNaN(num)) return "–";
+      return Number(num).toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: digits });
     }
-  }
-  if (prev12 === null) return null;
-  return (last.value / prev12 - 1) * 100;
-}
-
-function mergeOnDate(a, b) {
-  // merge two series by date (inner join)
-  const mapB = new Map(b.map(p => [fmtDate(p.date), p.value]));
-  const merged = [];
-  for (const p of a) {
-    const key = fmtDate(p.date);
-    if (mapB.has(key)) {
-      merged.push({ date: key, value: p.value - mapB.get(key) });
+    function fmtDate(dStr) {
+      if (!dStr) return "";
+      const d = new Date(dStr);
+      if (Number.isNaN(d.getTime())) return dStr;
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      return `${yyyy}-${mm}-${dd}`;
     }
-  }
-  return merged;
-}
+    function days(n) { return 24 * 60 * 60 * 1000 * n; }
 
-function useFredData(apiKey) {
-  const [data, setData] = useState({}); // { seriesId: observations[] }
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    if (!apiKey) return;
-    let mounted = true;
-    (async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const baseIds = INDICATORS.filter(i => i.type !== "derived").map(i => i.key);
-        const fetched = await Promise.all(baseIds.map(id => fetchFredSeries(id, apiKey)));
-        const newMap = {};
-        baseIds.forEach((id, idx) => { newMap[id] = fetched[idx]; });
-
-        // Derived: 10Y-2Y
-        const d10 = newMap["DGS10"] || [];
-        const d2 = newMap["DGS2"] || [];
-        if (d10.length && d2.length) newMap["SPREAD_10Y_2Y"] = mergeOnDate(d10, d2);
-
-        if (mounted) setData(newMap);
-      } catch (e) {
-        if (mounted) setError(e.message || String(e));
-      } finally {
-        if (mounted) setLoading(false);
+    async function fetchFredSeries(seriesId, apiKey, start = START_DATE) {
+      const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&api_key=${apiKey}&file_type=json&observation_start=${start}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(\`FRED fetch failed: \${seriesId}\`);
+      const json = await res.json();
+      const obs = (json.observations || [])
+        .filter(o => o.value !== "." && o.value !== null)
+        .map(o => ({ date: o.date, value: parseFloat(o.value) }))
+        .filter(o => !Number.isNaN(o.value));
+      return obs;
+    }
+    function valueAtOrBefore(observations, targetDate) {
+      for (let i = observations.length - 1; i >= 0; i--) {
+        const d = new Date(observations[i].date);
+        if (d.getTime() <= targetDate.getTime()) return observations[i].value;
       }
-    })();
-    return () => { mounted = false; };
-  }, [apiKey]);
-
-  return { data, loading, error };
-}
-
-function computeDeltas(observations, indicatorType) {
-  if (!observations || !observations.length) return { latest: null, d1m: null, d3m: null, asOf: null };
-  const latest = observations[observations.length - 1];
-  const lastDate = new Date(latest.date);
-  const m1Target = new Date(lastDate.getTime() - days(30));
-  const m3Target = new Date(lastDate.getTime() - days(90));
-  const v1m = valueAtOrBefore(observations, m1Target);
-  const v3m = valueAtOrBefore(observations, m3Target);
-
-  if (indicatorType === "yoy") {
-    return { latest: yoyFrom(observations), d1m: null, d3m: null, asOf: latest.date, isPercent: true };
-  }
-  return { latest: latest.value, d1m: v1m !== null ? latest.value - v1m : null, d3m: v3m !== null ? latest.value - v3m : null, asOf: latest.date };
-}
-
-function useMetrics(data) {
-  return useMemo(() => {
-    const rows = [];
-    for (const def of INDICATORS) {
-      const obs = data[def.key] || [];
-      const m = computeDeltas(obs, def.type);
-      rows.push({
-        key: def.key,
-        label: def.label,
-        desc: def.desc,
-        latest: m.latest,
-        d1m: m.d1m,
-        d3m: m.d3m,
-        asOf: m.asOf,
-        isPercent: def.type === "yoy" || def.key === "DGS2" || def.key === "DGS10" || def.key === "T10YIE",
-        observations: obs,
-      });
+      return null;
     }
-    return rows;
-  }, [data]);
-}
-
-function useLocalStorage(key, initial) {
-  const [value, setValue] = useState(() => localStorage.getItem(key) || initial);
-  useEffect(() => { if (value !== undefined) localStorage.setItem(key, value); }, [key, value]);
-  return [value, setValue];
-}
-
-function SettingsBar({ apiKey, setApiKey, onRefresh }) {
-  return (
-    <div className="w-full flex flex-col md:flex-row gap-3 items-start md:items-center justify-between p-4 bg-white/60 dark:bg-neutral-900/60 backdrop-blur rounded-xl shadow">
-      <div>
-        <h1 className="text-xl font-bold">Macro Dashboard</h1>
-        <p className="text-sm text-neutral-500">Enter your FRED API key to load data. Stored locally in your browser.</p>
-      </div>
-      <div className="flex items-center gap-2 w-full md:w-auto">
-        <input
-          type="password"
-          className="w-full md:w-80 px-3 py-2 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800"
-          placeholder="FRED API Key"
-          value={apiKey || ""}
-          onChange={e => setApiKey(e.target.value)}
-        />
-        <button onClick={onRefresh} className="px-4 py-2 rounded-lg bg-black text-white hover:opacity-90">Refresh</button>
-      </div>
-    </div>
-  );
-}
-
-function MiniStat({ label, value, asOf, d1m, d3m, isPercent }) {
-  const vStr = value === null ? "–" : isPercent ? `${value.toFixed(1)}%` : fmt(value);
-  const d1 = d1m === null || Number.isNaN(d1m) ? "–" : (isPercent ? `${d1m.toFixed(2)}` : fmt(d1m));
-  const d3 = d3m === null || Number.isNaN(d3m) ? "–" : (isPercent ? `${d3m.toFixed(2)}` : fmt(d3m));
-  return (
-    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-sm">
-      <div className="col-span-2 font-medium">{label}</div>
-      <div><span className="text-neutral-500">Latest</span><div className="font-semibold">{vStr}</div></div>
-      <div><span className="text-neutral-500">Δ 1m</span><div className="font-semibold">{d1}</div></div>
-      <div><span className="text-neutral-500">Δ 3m</span><div className="font-semibold">{d3}</div></div>
-      <div className="col-span-2 sm:col-span-5 text-neutral-400 text-xs">As of {fmtDate(asOf)}</div>
-    </div>
-  );
-}
-
-function ChartPanel({ open, onClose, title, series, isPercent }) {
-  const [range, setRange] = useState('2Y');
-  if (!open) return null;
-  const full = (series || [])
-    .map(p => ({ date: fmtDate(p.date), value: p.value, t: new Date(p.date).getTime() }))
-    .filter(p => p.value !== null && !Number.isNaN(p.value));
-
-  let data = full;
-  if (full.length) {
-    const lastT = full[full.length - 1].t;
-    const windows = { '6M': days(182), '1Y': days(365), '2Y': days(730), '5Y': days(1825) };
-    if (range !== 'MAX') {
-      const cutoff = lastT - windows[range];
-      data = full.filter(p => p.t >= cutoff);
+    function yoyFrom(observations) {
+      if (!observations || observations.length < 13) return null;
+      const last = observations[observations.length - 1];
+      const lastD = new Date(last.date);
+      let prev12 = null;
+      for (let i = observations.length - 2; i >= 0; i--) {
+        const d = new Date(observations[i].date);
+        if (d.getUTCFullYear() === lastD.getUTCFullYear() - 1 && d.getUTCMonth() === lastD.getUTCMonth()) {
+          prev12 = observations[i].value;
+          break;
+        }
+      }
+      if (prev12 === null) return null;
+      return (last.value / prev12 - 1) * 100;
     }
-  }
+    function mergeOnDate(a, b) {
+      const mapB = new Map(b.map(p => [fmtDate(p.date), p.value]));
+      const merged = [];
+      for (const p of a) {
+        const key = fmtDate(p.date);
+        if (mapB.has(key)) merged.push({ date: key, value: p.value - mapB.get(key) });
+      }
+      return merged;
+    }
 
-  const ranges = ['6M','1Y','2Y','5Y','MAX'];
+    // ===== Hooks =====
+    function useLocalStorage(key, initial) {
+      const [value, setValue] = useState(() => localStorage.getItem(key) || initial);
+      useEffect(() => { if (value !== undefined) localStorage.setItem(key, value); }, [key, value]);
+      return [value, setValue];
+    }
+    function useFredData(apiKey) {
+      const [data, setData] = useState({});
+      const [loading, setLoading] = useState(false);
+      const [error, setError] = useState(null);
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50">
-      <div className="w-full sm:max-w-4xl bg-white dark:bg-neutral-900 rounded-t-2xl sm:rounded-2xl shadow-xl p-4 sm:p-6">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-lg font-semibold">{title}</h3>
-          <div className="flex items-center gap-2">
-            <div className="hidden sm:flex items-center gap-1 mr-2">
+      useEffect(() => {
+        if (!apiKey) return;
+        let mounted = true;
+        (async () => {
+          try {
+            setLoading(true); setError(null);
+            const baseIds = INDICATORS.filter(i => i.type !== "derived").map(i => i.key);
+            const fetched = await Promise.all(baseIds.map(id => fetchFredSeries(id, apiKey)));
+            const newMap = {};
+            baseIds.forEach((id, idx) => { newMap[id] = fetched[idx]; });
+
+            // Derived spread
+            const d10 = newMap["DGS10"] || [];
+            const d2 = newMap["DGS2"] || [];
+            if (d10.length && d2.length) newMap["SPREAD_10Y_2Y"] = mergeOnDate(d10, d2);
+
+            if (mounted) setData(newMap);
+          } catch (e) {
+            if (mounted) setError(e.message || String(e));
+          } finally {
+            if (mounted) setLoading(false);
+          }
+        })();
+        return () => { mounted = false; };
+      }, [apiKey]);
+
+      return { data, loading, error };
+    }
+    function computeDeltas(observations, indicatorType) {
+      if (!observations || !observations.length) return { latest: null, d1m: null, d3m: null, asOf: null };
+      const latest = observations[observations.length - 1];
+      const lastDate = new Date(latest.date);
+      const m1Target = new Date(lastDate.getTime() - days(30));
+      const m3Target = new Date(lastDate.getTime() - days(90));
+      const v1m = valueAtOrBefore(observations, m1Target);
+      const v3m = valueAtOrBefore(observations, m3Target);
+
+      if (indicatorType === "yoy") {
+        return { latest: yoyFrom(observations), d1m: null, d3m: null, asOf: latest.date, isPercent: true };
+      }
+      return {
+        latest: latest.value,
+        d1m: v1m !== null ? latest.value - v1m : null,
+        d3m: v3m !== null ? latest.value - v3m : null,
+        asOf: latest.date
+      };
+    }
+    function useMetrics(data) {
+      return useMemo(() => {
+        const rows = [];
+        for (const def of INDICATORS) {
+          const obs = data[def.key] || [];
+          const m = computeDeltas(obs, def.type);
+          rows.push({
+            key: def.key,
+            label: def.label,
+            desc: def.desc,
+            latest: m.latest,
+            d1m: m.d1m,
+            d3m: m.d3m,
+            asOf: m.asOf,
+            isPercent: def.type === "yoy" || def.key === "DGS2" || def.key === "DGS10" || def.key === "T10YIE",
+            observations: obs,
+          });
+        }
+        return rows;
+      }, [data]);
+    }
+
+    // ===== UI =====
+    function SettingsBar({ apiKey, setApiKey, onRefresh }) {
+      return (
+        <div className="w-full flex flex-col md:flex-row gap-3 items-start md:items-center justify-between p-4 bg-white/60 backdrop-blur rounded-xl shadow">
+          <div>
+            <h1 className="text-xl font-bold">Macro Dashboard</h1>
+            <p className="text-sm text-neutral-500">FRED API Key를 입력하면 데이터가 로드됩니다. 키는 브라우저에만 저장돼요.</p>
+          </div>
+          <div className="flex items-center gap-2 w-full md:w-auto">
+            <input
+              type="password"
+              className="w-full md:w-80 px-3 py-2 rounded-lg border border-neutral-300 bg-white"
+              placeholder="FRED API Key"
+              value={apiKey || ""}
+              onChange={e => setApiKey(e.target.value)}
+            />
+            <button onClick={onRefresh} className="px-4 py-2 rounded-lg bg-black text-white hover:opacity-90">Refresh</button>
+          </div>
+        </div>
+      );
+    }
+    function MiniStat({ label, value, asOf, d1m, d3m, isPercent }) {
+      const vStr = value === null ? "–" : isPercent ? `${value.toFixed(1)}%` : fmt(value);
+      const d1 = d1m === null || Number.isNaN(d1m) ? "–" : (isPercent ? `${d1m.toFixed(2)}` : fmt(d1m));
+      const d3 = d3m === null || Number.isNaN(d3m) ? "–" : (isPercent ? `${d3m.toFixed(2)}` : fmt(d3m));
+      return (
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-sm">
+          <div className="col-span-2 font-medium">{label}</div>
+          <div><span className="text-neutral-500">Latest</span><div className="font-semibold">{vStr}</div></div>
+          <div><span className="text-neutral-500">Δ 1m</span><div className="font-semibold">{d1}</div></div>
+          <div><span className="text-neutral-500">Δ 3m</span><div className="font-semibold">{d3}</div></div>
+          <div className="col-span-2 sm:col-span-5 text-neutral-400 text-xs">As of {fmtDate(asOf)}</div>
+        </div>
+      );
+    }
+    function ChartPanel({ open, onClose, title, series, isPercent }) {
+      const [range, setRange] = useState('2Y');
+      if (!open) return null;
+
+      const full = (series || [])
+        .map(p => ({ date: fmtDate(p.date), value: p.value, t: new Date(p.date).getTime() }))
+        .filter(p => p.value !== null && !Number.isNaN(p.value));
+
+      let data = full;
+      if (full.length) {
+        const lastT = full[full.length - 1].t;
+        const windows = { '6M': days(182), '1Y': days(365), '2Y': days(730), '5Y': days(1825) };
+        if (range !== 'MAX') {
+          const cutoff = lastT - windows[range];
+          data = full.filter(p => p.t >= cutoff);
+        }
+      }
+      const ranges = ['6M','1Y','2Y','5Y','MAX'];
+
+      return (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50">
+          <div className="w-full sm:max-w-4xl bg-white rounded-t-2xl sm:rounded-2xl shadow-xl p-4 sm:p-6">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-semibold">{title}</h3>
+              <div className="flex items-center gap-2">
+                <div className="hidden sm:flex items-center gap-1 mr-2">
+                  {ranges.map(r => (
+                    <button key={r} onClick={() => setRange(r)}
+                      className={`px-2 py-1 rounded-md text-xs border ${range===r? 'bg-black text-white border-black' : 'bg-neutral-200 border-transparent'}`}>{r}</button>
+                  ))}
+                </div>
+                <button onClick={onClose} className="px-3 py-1 rounded-lg bg-neutral-200">Close</button>
+              </div>
+            </div>
+            {/* Mobile range selector */}
+            <div className="sm:hidden flex items-center gap-1 mb-3">
               {ranges.map(r => (
                 <button key={r} onClick={() => setRange(r)}
-                  className={`px-2 py-1 rounded-md text-xs border ${range===r? 'bg-black text-white border-black' : 'bg-neutral-200 dark:bg-neutral-800 border-transparent'}`}>{r}</button>
+                  className={`px-2 py-1 rounded-md text-xs border ${range===r? 'bg-black text-white border-black' : 'bg-neutral-200 border-transparent'}`}>{r}</button>
               ))}
             </div>
-            <button onClick={onClose} className="px-3 py-1 rounded-lg bg-neutral-200 dark:bg-neutral-800">Close</button>
+            <div className="h-72 sm:h-96">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={data} margin={{ top: 10, right: 20, bottom: 10, left: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" tick={{ fontSize: 11 }} minTickGap={24} />
+                  <YAxis tick={{ fontSize: 11 }} domain={["auto", "auto"]} />
+                  <Tooltip formatter={(v) => isPercent ? `${Number(v).toFixed(2)}%` : fmt(v)} labelFormatter={(l) => `Date: ${l}`} />
+                  <Line type="monotone" dataKey="value" dot={false} strokeWidth={2} />
+                  <ReferenceLine y={0} stroke="#aaa" />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         </div>
-        {/* Mobile range selector */}
-        <div className="sm:hidden flex items-center gap-1 mb-3">
-          {ranges.map(r => (
-            <button key={r} onClick={() => setRange(r)}
-              className={`px-2 py-1 rounded-md text-xs border ${range===r? 'bg-black text-white border-black' : 'bg-neutral-200 dark:bg-neutral-800 border-transparent'}`}>{r}</button>
-          ))}
-        </div>
-        <div className="h-72 sm:h-96">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data} margin={{ top: 10, right: 20, bottom: 10, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="date" tick={{ fontSize: 11 }} minTickGap={24} />
-              <YAxis tick={{ fontSize: 11 }} domain={["auto", "auto"]} />
-              <Tooltip formatter={(v) => isPercent ? `${Number(v).toFixed(2)}%` : fmt(v)} labelFormatter={(l) => `Date: ${l}`} />
-              <Line type="monotone" dataKey="value" dot={false} strokeWidth={2} />
-              <ReferenceLine y={0} stroke="#aaa" />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-    </div>
-  );
-}
+      );
+    }
+    function App() {
+      const [apiKey, setApiKey] = useLocalStorage(LS_KEY, "");
+      const { data, loading, error } = useFredData(apiKey);
+      const metrics = useMetrics(data);
+      const [selected, setSelected] = useState(null);
+      const lastUpdated = useMemo(() => new Date().toLocaleString(undefined, { hour12: false }), []);
 
-export default function App() {
-  const [apiKey, setApiKey] = useLocalStorage(LS_KEY, "");
-  const { data, loading, error } = useFredData(apiKey);
-  const metrics = useMetrics(data);
-  const [selected, setSelected] = useState(null);
-  const now = new Date();
-
-  const lastUpdated = useMemo(() => new Date().toLocaleString(undefined, { hour12: false }), []);
-
-  return (
-    <div className="min-h-screen w-full bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-50">
-      <div className="max-w-6xl mx-auto p-4 sm:p-6">
-        <SettingsBar apiKey={apiKey} setApiKey={setApiKey} onRefresh={() => window.location.reload()} />
-
-        <div className="mt-4 flex items-center justify-between">
-          <div className="text-sm text-neutral-500">KST {lastUpdated}</div>
-          <div className="text-sm">
-            <span className="px-2 py-1 rounded-full text-xs bg-neutral-200 dark:bg-neutral-800">{loading ? "Loading…" : "Ready"}</span>
-          </div>
-        </div>
-
-        {error && (
-          <div className="mt-4 p-3 rounded-lg bg-red-100 text-red-800">Error: {error}. Check your FRED API key.</div>
-        )}
-
-        {!apiKey && (
-          <div className="mt-6 p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900">
-            FRED API 키를 입력하고 Refresh를 누르면 지표가 로드됩니다. 무료 키는 FRED 사이트에서 발급 가능합니다.
-          </div>
-        )}
-
-        <div className="mt-6 grid gap-3">
-          <div className="hidden sm:grid grid-cols-12 gap-2 px-3 py-2 text-xs text-neutral-500">
-            <div className="col-span-5">Indicator</div>
-            <div className="col-span-2">Latest</div>
-            <div className="col-span-2">Δ 1m</div>
-            <div className="col-span-2">Δ 3m</div>
-            <div className="col-span-1 text-right">As of</div>
-          </div>
-          {metrics.map(row => (
-            <button
-              key={row.key}
-              onClick={() => setSelected(row)}
-              className="text-left w-full px-3 py-3 rounded-xl bg-white dark:bg-neutral-900 shadow hover:shadow-md transition-shadow border border-neutral-200/70 dark:border-neutral-800"
-            >
-              {/* Desktop row */}
-              <div className="hidden sm:grid grid-cols-12 gap-2 items-center">
-                <div className="col-span-5">
-                  <div className="font-medium">{row.label}</div>
-                  <div className="text-xs text-neutral-500">{row.desc}</div>
-                </div>
-                <div className="col-span-2 font-semibold">{row.isPercent ? (row.latest === null ? "–" : `${row.latest.toFixed(1)}%`) : fmt(row.latest)}</div>
-                <div className={`col-span-2 font-semibold ${row.d1m > 0 ? "text-emerald-600" : row.d1m < 0 ? "text-rose-600" : ""}`}>{row.d1m === null ? "–" : (row.isPercent ? `${row.d1m.toFixed(2)}` : fmt(row.d1m))}</div>
-                <div className={`col-span-2 font-semibold ${row.d3m > 0 ? "text-emerald-600" : row.d3m < 0 ? "text-rose-600" : ""}`}>{row.d3m === null ? "–" : (row.isPercent ? `${row.d3m.toFixed(2)}` : fmt(row.d3m))}</div>
-                <div className="col-span-1 text-right text-xs text-neutral-500">{fmtDate(row.asOf)}</div>
+      return (
+        <div className="min-h-screen w-full">
+          <div className="max-w-6xl mx-auto p-4 sm:p-6">
+            <SettingsBar apiKey={apiKey} setApiKey={setApiKey} onRefresh={() => window.location.reload()} />
+            <div className="mt-4 flex items-center justify-between">
+              <div className="text-sm text-neutral-500">{lastUpdated}</div>
+              <div className="text-sm">
+                <span className="px-2 py-1 rounded-full text-xs bg-neutral-200">{loading ? "Loading…" : "Ready"}</span>
               </div>
-              {/* Mobile card */}
-              <div className="sm:hidden">
-                <MiniStat label={row.label} value={row.latest} asOf={row.asOf} d1m={row.d1m} d3m={row.d3m} isPercent={row.isPercent} />
+            </div>
+
+            {error && <div className="mt-4 p-3 rounded-lg bg-red-100 text-red-800">Error: {error}. Check your FRED API key.</div>}
+
+            {!apiKey && (
+              <div className="mt-6 p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900">
+                FRED API 키를 입력하고 Refresh를 누르면 지표가 로드됩니다. (무료 키 발급 필요)
               </div>
-            </button>
-          ))}
-        </div>
+            )}
 
-        <div className="mt-8 text-xs text-neutral-500">
-          Source: FRED API. Click a row to open a chart and choose the range. Values shown are raw unless noted as YoY.
-        </div>
-      </div>
+            <div className="mt-6 grid gap-3">
+              <div className="hidden sm:grid grid-cols-12 gap-2 px-3 py-2 text-xs text-neutral-500">
+                <div className="col-span-5">Indicator</div>
+                <div className="col-span-2">Latest</div>
+                <div className="col-span-2">Δ 1m</div>
+                <div className="col-span-2">Δ 3m</div>
+                <div className="col-span-1 text-right">As of</div>
+              </div>
+              {metrics.map(row => (
+                <button
+                  key={row.key}
+                  onClick={() => setSelected(row)}
+                  className="text-left w-full px-3 py-3 rounded-xl bg-white shadow hover:shadow-md transition-shadow border border-neutral-200"
+                >
+                  {/* Desktop row */}
+                  <div className="hidden sm:grid grid-cols-12 gap-2 items-center">
+                    <div className="col-span-5">
+                      <div className="font-medium">{row.label}</div>
+                      <div className="text-xs text-neutral-500">{row.desc}</div>
+                    </div>
+                    <div className="col-span-2 font-semibold">{row.isPercent ? (row.latest === null ? "–" : `${row.latest.toFixed(1)}%`) : fmt(row.latest)}</div>
+                    <div className={`col-span-2 font-semibold ${row.d1m > 0 ? "text-emerald-600" : row.d1m < 0 ? "text-rose-600" : ""}`}>{row.d1m === null ? "–" : (row.isPercent ? `${row.d1m.toFixed(2)}` : fmt(row.d1m))}</div>
+                    <div className={`col-span-2 font-semibold ${row.d3m > 0 ? "text-emerald-600" : row.d3m < 0 ? "text-rose-600" : ""}`}>{row.d3m === null ? "–" : (row.isPercent ? `${row.d3m.toFixed(2)}` : fmt(row.d3m))}</div>
+                    <div className="col-span-1 text-right text-xs text-neutral-500">{fmtDate(row.asOf)}</div>
+                  </div>
+                  {/* Mobile card */}
+                  <div className="sm:hidden">
+                    <MiniStat label={row.label} value={row.latest} asOf={row.asOf} d1m={row.d1m} d3m={row.d3m} isPercent={row.isPercent} />
+                  </div>
+                </button>
+              ))}
+            </div>
 
-      <ChartPanel
-        open={!!selected}
-        onClose={() => setSelected(null)}
-        title={selected?.label}
-        series={selected?.observations}
-        isPercent={selected?.isPercent}
-      />
-    </div>
-  );
-}
+            <div className="mt-8 text-xs text-neutral-500">
+              Source: FRED API. Click a row to open a chart and choose the range.
+            </div>
+          </div>
+
+          <ChartPanel
+            open={!!selected}
+            onClose={() => setSelected(null)}
+            title={selected?.label}
+            series={selected?.observations}
+            isPercent={selected?.isPercent}
+          />
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
