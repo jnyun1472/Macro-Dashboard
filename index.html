@@ -69,7 +69,7 @@
     async function fetchFredSeries(seriesId, apiKey, start = START_DATE) {
       const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&api_key=${apiKey}&file_type=json&observation_start=${start}`;
       const res = await fetch(url);
-      if (!res.ok) throw new Error(\`FRED fetch failed: \${seriesId}\`);
+      if (!res.ok) throw new Error(`FRED fetch failed: ${seriesId}`);
       const json = await res.json();
       const obs = (json.observations || [])
         .filter(o => o.value !== "." && o.value !== null)
