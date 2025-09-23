@@ -118,14 +118,24 @@
       return (last.value / prev12 - 1) * 100;
     }
 
+    // 🔧 추가: 프록시 설정 (임시용)
+    const USE_PROXY = true;
+    // 공개 프록시(임시/테스트용): 서버가 대신 FRED에 요청하고 CORS 허용 헤더를 붙여 줍니다.
+    const PROXY = 'https://api.allorigins.win/raw?url=';
+    
     async function fetchFredSeries(seriesId, apiKey, start = START_DATE) {
-      const url = "https://api.stlouisfed.org/fred/series/observations"
+      const fredUrl = "https://api.stlouisfed.org/fred/series/observations"
         + "?series_id=" + encodeURIComponent(seriesId)
         + "&api_key=" + encodeURIComponent(apiKey)
         + "&file_type=json"
         + "&observation_start=" + encodeURIComponent(start);
+    
+      // ✅ 프록시를 통해 호출 (브라우저→프록시→FRED)
+      const url = USE_PROXY ? (PROXY + encodeURIComponent(fredUrl)) : fredUrl;
+    
       const res = await fetch(url);
       if (!res.ok) throw new Error("FRED fetch failed: " + seriesId);
+    
       const json = await res.json();
       const obs = (json.observations || [])
         .filter(o => o.value !== "." && o.value !== null)
