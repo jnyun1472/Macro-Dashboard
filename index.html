@@ -42,7 +42,7 @@
 
     <!-- 지표 테이블 -->
     <div class="mt-5 overflow-x-auto">
-      <table class="w-full min-w-[720px] bg-white rounded-xl shadow border border-neutral-200">
+      <table class="w-full min-w-[820px] bg-white rounded-xl shadow border border-neutral-200">
         <thead>
           <tr class="text-xs text-neutral-500">
             <th class="text-left px-3 py-2">Indicator</th>
@@ -66,16 +66,29 @@
     const START_DATE = "2019-01-01";
     const LS_KEY = "FRED_API_KEY";
 
-    // 최소 셋으로 시작 (원하시면 나중에 추가)
+    // 요청하신 전체 지표 세트 (라벨에 ID 제거)
     const INDICATORS = [
-      // label, desc, key, type('level'|'yoy'), isPercent
-      { key: "CPIAUCSL", label: "CPI YoY", desc: "미국 CPI (전년동월 대비)", type: "yoy", isPercent: true },
-      { key: "DGS10",    label: "10Y Yield", desc: "미 국채 10년물 수익률(%)", type: "level", isPercent: true },
-      { key: "SP500",    label: "S&P 500", desc: "S&P 500 지수(가격)", type: "level", isPercent: false },
-      { key: "GOLDPMGBD228NLBM", label: "Gold PM Fix", desc: "런던 금(오전 고시가, $/oz)", type: "level", isPercent: false },
-      { key: "DTWEXBGS", label: "Dollar Index", desc: "미 달러(TW) 지수", type: "level", isPercent: false },
-      { key: "PAYEMS",   label: "NFP", desc: "비농업 부문 고용(천 명)", type: "level", isPercent: false },
-      { key: "ICSA",     label: "Initial Claims", desc: "신규 실업수당 청구(주간)", type: "level", isPercent: false },
+      // Macro & Rates
+      { key: "PAYEMS", label: "NFP", desc: "Nonfarm Payrolls (thous)", type: "level", isPercent: false, frequencyHint: "monthly" },
+      { key: "ICSA", label: "Initial Claims", desc: "Weekly Initial Jobless Claims", type: "level", isPercent: false, frequencyHint: "weekly" },
+      { key: "AWHAEMAN", label: "Avg Hours – Manufacturing", desc: "Manufacturing Average Weekly Hours", type: "level", isPercent: false, frequencyHint: "monthly" },
+      { key: "NAPMNOI", label: "ISM New Orders", desc: "ISM Manufacturing New Orders Index", type: "level", isPercent: false, frequencyHint: "monthly" },
+      { key: "CPIAUCSL", label: "CPI YoY", desc: "CPI (YoY, headline)", type: "yoy", isPercent: true, frequencyHint: "monthly" },
+      { key: "T10YIE", label: "10Y Breakeven", desc: "10Y Inflation Expectation", type: "level", isPercent: true, frequencyHint: "daily" },
+      { key: "DGS2", label: "2Y Yield", desc: "2-Year Treasury Yield (%)", type: "level", isPercent: true, frequencyHint: "daily" },
+      { key: "DGS10", label: "10Y Yield", desc: "10-Year Treasury Yield (%)", type: "level", isPercent: true, frequencyHint: "daily" },
+      { key: "SPREAD_10Y_2Y", label: "10Y - 2Y Spread", desc: "Term Spread (10Y minus 2Y)", type: "derived", isPercent: false, frequencyHint: "daily", base: ["DGS10", "DGS2"] },
+      { key: "WALCL", label: "Fed Balance Sheet", desc: "Federal Reserve Total Assets ($bn)", type: "level", isPercent: false, frequencyHint: "weekly" },
+      { key: "RRPONTSYD", label: "ON RRP Balance", desc: "Overnight Reverse Repo ($bn)", type: "level", isPercent: false, frequencyHint: "daily" },
+      { key: "BAMLH0A0HYM2", label: "HY OAS", desc: "High Yield OAS (bps)", type: "level", isPercent: false, frequencyHint: "daily" },
+      { key: "DTWEXBGS", label: "Dollar Index", desc: "Trade-Weighted Dollar Index", type: "level", isPercent: false, frequencyHint: "daily" },
+      { key: "GOLDPMGBD228NLBM", label: "Gold PM Fix", desc: "London Gold PM Fix ($/oz)", type: "level", isPercent: false, frequencyHint: "daily" },
+      // Equity Indices
+      { key: "SP500", label: "S&P 500", desc: "S&P 500 Index (price)", type: "level", isPercent: false, frequencyHint: "daily" },
+      { key: "NASDAQCOM", label: "Nasdaq Composite", desc: "Nasdaq Composite Index", type: "level", isPercent: false, frequencyHint: "daily" },
+      { key: "DJIA", label: "Dow Jones Industrial Avg", desc: "Dow Jones Industrial Average", type: "level", isPercent: false, frequencyHint: "daily" },
+      { key: "WILL5000INDFC", label: "Wilshire 5000", desc: "Wilshire 5000 Total Market (Full Cap)", type: "level", isPercent: false, frequencyHint: "daily" },
+      { key: "VIXCLS", label: "VIX", desc: "CBOE Volatility Index", type: "level", isPercent: false, frequencyHint: "daily" },
     ];
 
     // ===== 유틸 =====
@@ -102,6 +115,7 @@
       }
       return null;
     }
+
     function yoyFrom(observations) {
       if (!observations || observations.length < 13) return null;
       const last = observations[observations.length - 1];
@@ -118,24 +132,22 @@
       return (last.value / prev12 - 1) * 100;
     }
 
-    // 🔧 추가: 프록시 설정 (임시용)
+    // 🔧 프록시 (임시/테스트용)
     const USE_PROXY = true;
-    // 공개 프록시(임시/테스트용): 서버가 대신 FRED에 요청하고 CORS 허용 헤더를 붙여 줍니다.
     const PROXY = 'https://api.allorigins.win/raw?url=';
-    
+
     async function fetchFredSeries(seriesId, apiKey, start = START_DATE) {
       const fredUrl = "https://api.stlouisfed.org/fred/series/observations"
         + "?series_id=" + encodeURIComponent(seriesId)
         + "&api_key=" + encodeURIComponent(apiKey)
         + "&file_type=json"
         + "&observation_start=" + encodeURIComponent(start);
-    
-      // ✅ 프록시를 통해 호출 (브라우저→프록시→FRED)
+
       const url = USE_PROXY ? (PROXY + encodeURIComponent(fredUrl)) : fredUrl;
-    
+
       const res = await fetch(url);
       if (!res.ok) throw new Error("FRED fetch failed: " + seriesId);
-    
+
       const json = await res.json();
       const obs = (json.observations || [])
         .filter(o => o.value !== "." && o.value !== null)
@@ -144,15 +156,25 @@
       return obs;
     }
 
+    // 동일 날짜로 병합(내적 조인) → 10Y-2Y 스프레드
+    function mergeOnDate(a, b) {
+      const mapB = new Map(b.map(p => [fmtDate(p.date), p.value]));
+      const merged = [];
+      for (const p of a) {
+        const key = fmtDate(p.date);
+        if (mapB.has(key)) merged.push({ date: key, value: p.value - mapB.get(key) });
+      }
+      return merged;
+    }
+
     function computeDeltas(observations, mode /* 'level'|'yoy' */) {
       if (!observations || !observations.length) {
-        return { latest: null, d1m: null, d3m: null, asOf: null };
+        return { latest: null, d1m: null, d3m: null, asOf: null, isPercent: false };
       }
       const latest = observations[observations.length - 1];
       const lastDate = new Date(latest.date);
 
       if (mode === "yoy") {
-        // YoY는 델타 대신 %만 표시
         return {
           latest: yoyFrom(observations),
           d1m: null,
@@ -168,7 +190,8 @@
         latest: latest.value,
         d1m: v1m !== null ? latest.value - v1m : null,
         d3m: v3m !== null ? latest.value - v3m : null,
-        asOf: latest.date
+        asOf: latest.date,
+        isPercent: false
       };
     }
 
@@ -176,12 +199,14 @@
     function renderRow(tbody, def, metrics) {
       const tr = document.createElement("tr");
       tr.className = "border-t border-neutral-100 hover:bg-neutral-50";
-      const latestStr = (def.isPercent || metrics.isPercent)
-        ? (metrics.latest === null ? "–" : `${Number(metrics.latest).toFixed(1)}%`)
+
+      const isPct = def.isPercent || metrics.isPercent;
+      const latestStr = isPct
+        ? (metrics.latest == null ? "–" : `${Number(metrics.latest).toFixed(1)}%`)
         : fmt(metrics.latest);
 
-      const d1mStr = metrics.d1m === null ? "–" : (def.isPercent ? `${Number(metrics.d1m).toFixed(2)}` : fmt(metrics.d1m));
-      const d3mStr = metrics.d3m === null ? "–" : (def.isPercent ? `${Number(metrics.d3m).toFixed(2)}` : fmt(metrics.d3m));
+      const d1mStr = metrics.d1m === null ? "–" : (isPct ? `${Number(metrics.d1m).toFixed(2)}` : fmt(metrics.d1m));
+      const d3mStr = metrics.d3m === null ? "–" : (isPct ? `${Number(metrics.d3m).toFixed(2)}` : fmt(metrics.d3m));
       const d1mClass = metrics.d1m > 0 ? "text-emerald-600" : metrics.d1m < 0 ? "text-rose-600" : "";
       const d3mClass = metrics.d3m > 0 ? "text-emerald-600" : metrics.d3m < 0 ? "text-rose-600" : "";
 
@@ -222,17 +247,37 @@
 
       try {
         status.textContent = "불러오는 중…";
-        const all = await Promise.all(INDICATORS.map(d => fetchFredSeries(d.key, apiKey)));
-        all.forEach((obs, i) => {
-          const def = INDICATORS[i];
+
+        // 1) 파생 제외 목록만 호출
+        const baseDefs = INDICATORS.filter(d => d.type !== "derived");
+        const baseIds = baseDefs.map(d => d.key);
+        const fetched = await Promise.all(baseIds.map(id => fetchFredSeries(id, apiKey)));
+
+        // 2) 맵 구성
+        const map = {};
+        baseIds.forEach((id, idx) => { map[id] = fetched[idx]; });
+
+        // 3) 파생 생성: 10Y-2Y
+        const d10 = map["DGS10"] || [];
+        const d2  = map["DGS2"]  || [];
+        if (d10.length && d2.length) {
+          map["SPREAD_10Y_2Y"] = mergeOnDate(d10, d2);
+        }
+
+        // 4) 렌더
+        INDICATORS.forEach(def => {
+          const obs = map[def.key] || [];
           const m = computeDeltas(obs, def.type);
+          // CPI YoY / DGS2 / DGS10 / T10YIE는 퍼센트로 표기
+          m.isPercent = def.isPercent || m.isPercent;
           renderRow(tbody, def, m);
         });
+
         status.textContent = "완료";
         lastUpdated.textContent = new Date().toLocaleString(undefined, { hour12: false });
       } catch (e) {
         status.textContent = "오류";
-        errorBox.textContent = "데이터 로드 중 오류: " + (e.message || String(e)) + " (API 키와 네트워크를 확인하세요)";
+        errorBox.textContent = "데이터 로드 중 오류: " + (e.message || String(e)) + " (API 키와 네트워크/CORS를 확인하세요)";
         errorBox.classList.remove("hidden");
       }
     }
@@ -247,7 +292,13 @@
     $("#refreshBtn").addEventListener("click", loadAll);
 
     // 초기 로드
-    loadAll();
+    (function init(){
+      const saved = localStorage.getItem(LS_KEY) || "";
+      $("#apiKeyInput").value = saved;
+      $("#lastUpdated").textContent = new Date().toLocaleString(undefined, { hour12: false });
+      if (saved) loadAll();
+      else $("#noKeyBox").classList.remove("hidden");
+    })();
   </script>
 </body>
 </html>
