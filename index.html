@@ -1,62 +1,85 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Macro Dashboard</title>
-  <!-- Tailwind -->
+  <title>Macro Dashboard (Numbers Only)</title>
+  <!-- Tailwind (프로토타입용 CDN) -->
   <script src="https://cdn.tailwindcss.com"></script>
-  
-  <!-- React / ReactDOM (고정 버전) -->
-  <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
-  <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
-  
-  <!-- Recharts (고정 버전 UMD) -->
-  <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.min.js"></script>
-  
-  <!-- Babel (고정 버전) -->
-  <script src="https://unpkg.com/@babel/standalone@7.25.8/babel.min.js"></script>
 </head>
 <body class="bg-neutral-50 text-neutral-900">
-  <div id="root"></div>
+  <div class="max-w-5xl mx-auto p-4 sm:p-6">
+    <!-- 상단: 제목 / API 키 입력 -->
+    <div class="w-full flex flex-col md:flex-row gap-3 items-start md:items-center justify-between p-4 bg-white/70 backdrop-blur rounded-xl shadow">
+      <div>
+        <h1 class="text-xl font-bold">Macro Dashboard</h1>
+        <p class="text-sm text-neutral-500">차트 없이 숫자만 간단히 표시합니다. (FRED API 키 필요)</p>
+      </div>
+      <div class="flex items-center gap-2 w-full md:w-auto">
+        <input id="apiKeyInput" type="password"
+               class="w-full md:w-80 px-3 py-2 rounded-lg border border-neutral-300 bg-white"
+               placeholder="FRED API Key" />
+        <button id="saveBtn"
+                class="px-4 py-2 rounded-lg bg-black text-white hover:opacity-90">저장</button>
+        <button id="refreshBtn"
+                class="px-4 py-2 rounded-lg bg-neutral-800 text-white hover:opacity-90">새로고침</button>
+      </div>
+    </div>
 
-<script type="text/babel" data-presets="env,react">
-  const { useEffect, useMemo, useState } = React;
-  const {
-    LineChart, Line, XAxis, YAxis, Tooltip,
-    CartesianGrid, ResponsiveContainer, ReferenceLine
-  } = window.Recharts;
+    <!-- 상태 표시 -->
+    <div class="mt-3 flex items-center justify-between">
+      <div id="statusText" class="text-sm text-neutral-500">대기 중…</div>
+      <div id="lastUpdated" class="text-sm text-neutral-500"></div>
+    </div>
 
+    <!-- API 키 안내 -->
+    <div id="noKeyBox" class="hidden mt-4 p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900">
+      FRED API 키를 입력하고 <b>저장</b>을 누른 뒤 <b>새로고침</b>을 누르세요. (키는 브라우저에만 저장됩니다)
+    </div>
+
+    <!-- 에러 박스 -->
+    <div id="errorBox" class="hidden mt-4 p-3 rounded-lg bg-red-100 text-red-800"></div>
+
+    <!-- 지표 테이블 -->
+    <div class="mt-5 overflow-x-auto">
+      <table class="w-full min-w-[720px] bg-white rounded-xl shadow border border-neutral-200">
+        <thead>
+          <tr class="text-xs text-neutral-500">
+            <th class="text-left px-3 py-2">Indicator</th>
+            <th class="text-right px-3 py-2">Latest</th>
+            <th class="text-right px-3 py-2">Δ 1m</th>
+            <th class="text-right px-3 py-2">Δ 3m</th>
+            <th class="text-right px-3 py-2">As of</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+
+    <div class="mt-4 text-xs text-neutral-500">
+      Source: FRED API. 표시 값은 최신 관측치 기준이며, 월/주/일 자료는 서로 다른 빈도를 가질 수 있습니다.
+    </div>
+  </div>
+
+  <script type="module">
     // ===== 설정 =====
     const START_DATE = "2019-01-01";
     const LS_KEY = "FRED_API_KEY";
 
-    // 지표 정의 (라벨에 ID 표기 제거)
+    // 최소 셋으로 시작 (원하시면 나중에 추가)
     const INDICATORS = [
-      // Macro & Rates
-      { key: "PAYEMS", label: "NFP", desc: "Nonfarm Payrolls (thous)", type: "level", frequencyHint: "monthly" },
-      { key: "ICSA", label: "Initial Claims", desc: "Weekly Initial Jobless Claims", type: "level", frequencyHint: "weekly" },
-      { key: "AWHAEMAN", label: "Avg Hours – Manufacturing", desc: "Manufacturing Average Weekly Hours", type: "level", frequencyHint: "monthly" },
-      { key: "NAPMNOI", label: "ISM New Orders", desc: "ISM Manufacturing New Orders Index", type: "level", frequencyHint: "monthly" },
-      { key: "CPIAUCSL", label: "CPI YoY", desc: "CPI (YoY, headline)", type: "yoy", frequencyHint: "monthly" },
-      { key: "T10YIE", label: "10Y Breakeven", desc: "10Y Inflation Expectation", type: "level", frequencyHint: "daily" },
-      { key: "DGS2", label: "2Y Yield", desc: "2-Year Treasury Yield (%)", type: "level", frequencyHint: "daily" },
-      { key: "DGS10", label: "10Y Yield", desc: "10-Year Treasury Yield (%)", type: "level", frequencyHint: "daily" },
-      { key: "SPREAD_10Y_2Y", label: "10Y - 2Y Spread", desc: "Term Spread (10Y minus 2Y)", type: "derived", base: ["DGS10", "DGS2"], frequencyHint: "daily" },
-      { key: "WALCL", label: "Fed Balance Sheet", desc: "Federal Reserve Total Assets ($bn)", type: "level", frequencyHint: "weekly" },
-      { key: "RRPONTSYD", label: "ON RRP Balance", desc: "Overnight Reverse Repo ($bn)", type: "level", frequencyHint: "daily" },
-      { key: "BAMLH0A0HYM2", label: "HY OAS", desc: "High Yield OAS (bps)", type: "level", frequencyHint: "daily" },
-      { key: "DTWEXBGS", label: "Dollar Index", desc: "Trade-Weighted Dollar Index", type: "level", frequencyHint: "daily" },
-      { key: "GOLDPMGBD228NLBM", label: "Gold PM Fix", desc: "London Gold PM Fix ($/oz)", type: "level", frequencyHint: "daily" },
-      // Equity Indices
-      { key: "SP500", label: "S&P 500", desc: "S&P 500 Index (price)", type: "level", frequencyHint: "daily" },
-      { key: "NASDAQCOM", label: "Nasdaq Composite", desc: "Nasdaq Composite Index", type: "level", frequencyHint: "daily" },
-      { key: "DJIA", label: "Dow Jones Industrial Avg", desc: "Dow Jones Industrial Average", type: "level", frequencyHint: "daily" },
-      { key: "WILL5000INDFC", label: "Wilshire 5000", desc: "Wilshire 5000 Total Market (Full Cap)", type: "level", frequencyHint: "daily" },
-      { key: "VIXCLS", label: "VIX", desc: "CBOE Volatility Index", type: "level", frequencyHint: "daily" },
+      // label, desc, key, type('level'|'yoy'), isPercent
+      { key: "CPIAUCSL", label: "CPI YoY", desc: "미국 CPI (전년동월 대비)", type: "yoy", isPercent: true },
+      { key: "DGS10",    label: "10Y Yield", desc: "미 국채 10년물 수익률(%)", type: "level", isPercent: true },
+      { key: "SP500",    label: "S&P 500", desc: "S&P 500 지수(가격)", type: "level", isPercent: false },
+      { key: "GOLDPMGBD228NLBM", label: "Gold PM Fix", desc: "런던 금(오전 고시가, $/oz)", type: "level", isPercent: false },
+      { key: "DTWEXBGS", label: "Dollar Index", desc: "미 달러(TW) 지수", type: "level", isPercent: false },
+      { key: "PAYEMS",   label: "NFP", desc: "비농업 부문 고용(천 명)", type: "level", isPercent: false },
+      { key: "ICSA",     label: "Initial Claims", desc: "신규 실업수당 청구(주간)", type: "level", isPercent: false },
     ];
 
     // ===== 유틸 =====
+    const $ = (sel) => document.querySelector(sel);
     function fmt(num, digits = 2) {
       if (num === null || num === undefined || Number.isNaN(num)) return "–";
       return Number(num).toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: digits });
@@ -72,17 +95,6 @@
     }
     function days(n) { return 24 * 60 * 60 * 1000 * n; }
 
-    async function fetchFredSeries(seriesId, apiKey, start = START_DATE) {
-      const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&api_key=${apiKey}&file_type=json&observation_start=${start}`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`FRED fetch failed: ${seriesId}`);
-      const json = await res.json();
-      const obs = (json.observations || [])
-        .filter(o => o.value !== "." && o.value !== null)
-        .map(o => ({ date: o.date, value: parseFloat(o.value) }))
-        .filter(o => !Number.isNaN(o.value));
-      return obs;
-    }
     function valueAtOrBefore(observations, targetDate) {
       for (let i = observations.length - 1; i >= 0; i--) {
         const d = new Date(observations[i].date);
@@ -105,67 +117,43 @@
       if (prev12 === null) return null;
       return (last.value / prev12 - 1) * 100;
     }
-    function mergeOnDate(a, b) {
-      const mapB = new Map(b.map(p => [fmtDate(p.date), p.value]));
-      const merged = [];
-      for (const p of a) {
-        const key = fmtDate(p.date);
-        if (mapB.has(key)) merged.push({ date: key, value: p.value - mapB.get(key) });
+
+    async function fetchFredSeries(seriesId, apiKey, start = START_DATE) {
+      const url = "https://api.stlouisfed.org/fred/series/observations"
+        + "?series_id=" + encodeURIComponent(seriesId)
+        + "&api_key=" + encodeURIComponent(apiKey)
+        + "&file_type=json"
+        + "&observation_start=" + encodeURIComponent(start);
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("FRED fetch failed: " + seriesId);
+      const json = await res.json();
+      const obs = (json.observations || [])
+        .filter(o => o.value !== "." && o.value !== null)
+        .map(o => ({ date: o.date, value: parseFloat(o.value) }))
+        .filter(o => !Number.isNaN(o.value));
+      return obs;
+    }
+
+    function computeDeltas(observations, mode /* 'level'|'yoy' */) {
+      if (!observations || !observations.length) {
+        return { latest: null, d1m: null, d3m: null, asOf: null };
       }
-      return merged;
-    }
-
-    // ===== Hooks =====
-    function useLocalStorage(key, initial) {
-      const [value, setValue] = useState(() => localStorage.getItem(key) || initial);
-      useEffect(() => { if (value !== undefined) localStorage.setItem(key, value); }, [key, value]);
-      return [value, setValue];
-    }
-    function useFredData(apiKey) {
-      const [data, setData] = useState({});
-      const [loading, setLoading] = useState(false);
-      const [error, setError] = useState(null);
-
-      useEffect(() => {
-        if (!apiKey) return;
-        let mounted = true;
-        (async () => {
-          try {
-            setLoading(true); setError(null);
-            const baseIds = INDICATORS.filter(i => i.type !== "derived").map(i => i.key);
-            const fetched = await Promise.all(baseIds.map(id => fetchFredSeries(id, apiKey)));
-            const newMap = {};
-            baseIds.forEach((id, idx) => { newMap[id] = fetched[idx]; });
-
-            // Derived spread
-            const d10 = newMap["DGS10"] || [];
-            const d2 = newMap["DGS2"] || [];
-            if (d10.length && d2.length) newMap["SPREAD_10Y_2Y"] = mergeOnDate(d10, d2);
-
-            if (mounted) setData(newMap);
-          } catch (e) {
-            if (mounted) setError(e.message || String(e));
-          } finally {
-            if (mounted) setLoading(false);
-          }
-        })();
-        return () => { mounted = false; };
-      }, [apiKey]);
-
-      return { data, loading, error };
-    }
-    function computeDeltas(observations, indicatorType) {
-      if (!observations || !observations.length) return { latest: null, d1m: null, d3m: null, asOf: null };
       const latest = observations[observations.length - 1];
       const lastDate = new Date(latest.date);
-      const m1Target = new Date(lastDate.getTime() - days(30));
-      const m3Target = new Date(lastDate.getTime() - days(90));
-      const v1m = valueAtOrBefore(observations, m1Target);
-      const v3m = valueAtOrBefore(observations, m3Target);
 
-      if (indicatorType === "yoy") {
-        return { latest: yoyFrom(observations), d1m: null, d3m: null, asOf: latest.date, isPercent: true };
+      if (mode === "yoy") {
+        // YoY는 델타 대신 %만 표시
+        return {
+          latest: yoyFrom(observations),
+          d1m: null,
+          d3m: null,
+          asOf: latest.date,
+          isPercent: true
+        };
       }
+
+      const v1m = valueAtOrBefore(observations, new Date(lastDate.getTime() - days(30)));
+      const v3m = valueAtOrBefore(observations, new Date(lastDate.getTime() - days(90)));
       return {
         latest: latest.value,
         d1m: v1m !== null ? latest.value - v1m : null,
@@ -173,196 +161,83 @@
         asOf: latest.date
       };
     }
-    function useMetrics(data) {
-      return useMemo(() => {
-        const rows = [];
-        for (const def of INDICATORS) {
-          const obs = data[def.key] || [];
-          const m = computeDeltas(obs, def.type);
-          rows.push({
-            key: def.key,
-            label: def.label,
-            desc: def.desc,
-            latest: m.latest,
-            d1m: m.d1m,
-            d3m: m.d3m,
-            asOf: m.asOf,
-            isPercent: def.type === "yoy" || def.key === "DGS2" || def.key === "DGS10" || def.key === "T10YIE",
-            observations: obs,
-          });
-        }
-        return rows;
-      }, [data]);
+
+    // ===== 렌더링 =====
+    function renderRow(tbody, def, metrics) {
+      const tr = document.createElement("tr");
+      tr.className = "border-t border-neutral-100 hover:bg-neutral-50";
+      const latestStr = (def.isPercent || metrics.isPercent)
+        ? (metrics.latest === null ? "–" : `${Number(metrics.latest).toFixed(1)}%`)
+        : fmt(metrics.latest);
+
+      const d1mStr = metrics.d1m === null ? "–" : (def.isPercent ? `${Number(metrics.d1m).toFixed(2)}` : fmt(metrics.d1m));
+      const d3mStr = metrics.d3m === null ? "–" : (def.isPercent ? `${Number(metrics.d3m).toFixed(2)}` : fmt(metrics.d3m));
+      const d1mClass = metrics.d1m > 0 ? "text-emerald-600" : metrics.d1m < 0 ? "text-rose-600" : "";
+      const d3mClass = metrics.d3m > 0 ? "text-emerald-600" : metrics.d3m < 0 ? "text-rose-600" : "";
+
+      tr.innerHTML = `
+        <td class="px-3 py-3">
+          <div class="font-medium">${def.label}</div>
+          <div class="text-xs text-neutral-500">${def.desc}</div>
+        </td>
+        <td class="px-3 py-3 text-right font-semibold">${latestStr}</td>
+        <td class="px-3 py-3 text-right font-semibold ${d1mClass}">${d1mStr}</td>
+        <td class="px-3 py-3 text-right font-semibold ${d3mClass}">${d3mStr}</td>
+        <td class="px-3 py-3 text-right text-xs text-neutral-500">${fmtDate(metrics.asOf)}</td>
+      `;
+      tbody.appendChild(tr);
     }
 
-    // ===== UI =====
-    function SettingsBar({ apiKey, setApiKey, onRefresh }) {
-      return (
-        <div className="w-full flex flex-col md:flex-row gap-3 items-start md:items-center justify-between p-4 bg-white/60 backdrop-blur rounded-xl shadow">
-          <div>
-            <h1 className="text-xl font-bold">Macro Dashboard</h1>
-            <p className="text-sm text-neutral-500">FRED API Key를 입력하면 데이터가 로드됩니다. 키는 브라우저에만 저장돼요.</p>
-          </div>
-          <div className="flex items-center gap-2 w-full md:w-auto">
-            <input
-              type="password"
-              className="w-full md:w-80 px-3 py-2 rounded-lg border border-neutral-300 bg-white"
-              placeholder="FRED API Key"
-              value={apiKey || ""}
-              onChange={e => setApiKey(e.target.value)}
-            />
-            <button onClick={onRefresh} className="px-4 py-2 rounded-lg bg-black text-white hover:opacity-90">Refresh</button>
-          </div>
-        </div>
-      );
-    }
-    function MiniStat({ label, value, asOf, d1m, d3m, isPercent }) {
-      const vStr = value === null ? "–" : isPercent ? `${value.toFixed(1)}%` : fmt(value);
-      const d1 = d1m === null || Number.isNaN(d1m) ? "–" : (isPercent ? `${d1m.toFixed(2)}` : fmt(d1m));
-      const d3 = d3m === null || Number.isNaN(d3m) ? "–" : (isPercent ? `${d3m.toFixed(2)}` : fmt(d3m));
-      return (
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-sm">
-          <div className="col-span-2 font-medium">{label}</div>
-          <div><span className="text-neutral-500">Latest</span><div className="font-semibold">{vStr}</div></div>
-          <div><span className="text-neutral-500">Δ 1m</span><div className="font-semibold">{d1}</div></div>
-          <div><span className="text-neutral-500">Δ 3m</span><div className="font-semibold">{d3}</div></div>
-          <div className="col-span-2 sm:col-span-5 text-neutral-400 text-xs">As of {fmtDate(asOf)}</div>
-        </div>
-      );
-    }
-    function ChartPanel({ open, onClose, title, series, isPercent }) {
-      const [range, setRange] = useState('2Y');
-      if (!open) return null;
+    async function loadAll() {
+      const apiKey = localStorage.getItem(LS_KEY) || "";
+      const status = $("#statusText");
+      const errorBox = $("#errorBox");
+      const noKeyBox = $("#noKeyBox");
+      const tbody = $("#tbody");
+      const lastUpdated = $("#lastUpdated");
 
-      const full = (series || [])
-        .map(p => ({ date: fmtDate(p.date), value: p.value, t: new Date(p.date).getTime() }))
-        .filter(p => p.value !== null && !Number.isNaN(p.value));
+      $("#apiKeyInput").value = apiKey;
+      tbody.innerHTML = "";
+      errorBox.classList.add("hidden");
+      errorBox.textContent = "";
 
-      let data = full;
-      if (full.length) {
-        const lastT = full[full.length - 1].t;
-        const windows = { '6M': days(182), '1Y': days(365), '2Y': days(730), '5Y': days(1825) };
-        if (range !== 'MAX') {
-          const cutoff = lastT - windows[range];
-          data = full.filter(p => p.t >= cutoff);
-        }
+      if (!apiKey) {
+        noKeyBox.classList.remove("hidden");
+        status.textContent = "API 키를 입력하세요.";
+        lastUpdated.textContent = "";
+        return;
+      } else {
+        noKeyBox.classList.add("hidden");
       }
-      const ranges = ['6M','1Y','2Y','5Y','MAX'];
 
-      return (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50">
-          <div className="w-full sm:max-w-4xl bg-white rounded-t-2xl sm:rounded-2xl shadow-xl p-4 sm:p-6">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-lg font-semibold">{title}</h3>
-              <div className="flex items-center gap-2">
-                <div className="hidden sm:flex items-center gap-1 mr-2">
-                  {ranges.map(r => (
-                    <button key={r} onClick={() => setRange(r)}
-                      className={`px-2 py-1 rounded-md text-xs border ${range===r? 'bg-black text-white border-black' : 'bg-neutral-200 border-transparent'}`}>{r}</button>
-                  ))}
-                </div>
-                <button onClick={onClose} className="px-3 py-1 rounded-lg bg-neutral-200">Close</button>
-              </div>
-            </div>
-            {/* Mobile range selector */}
-            <div className="sm:hidden flex items-center gap-1 mb-3">
-              {ranges.map(r => (
-                <button key={r} onClick={() => setRange(r)}
-                  className={`px-2 py-1 rounded-md text-xs border ${range===r? 'bg-black text-white border-black' : 'bg-neutral-200 border-transparent'}`}>{r}</button>
-              ))}
-            </div>
-            <div className="h-72 sm:h-96">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={data} margin={{ top: 10, right: 20, bottom: 10, left: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" tick={{ fontSize: 11 }} minTickGap={24} />
-                  <YAxis tick={{ fontSize: 11 }} domain={["auto", "auto"]} />
-                  <Tooltip formatter={(v) => isPercent ? `${Number(v).toFixed(2)}%` : fmt(v)} labelFormatter={(l) => `Date: ${l}`} />
-                  <Line type="monotone" dataKey="value" dot={false} strokeWidth={2} />
-                  <ReferenceLine y={0} stroke="#aaa" />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </div>
-      );
-    }
-    function App() {
-      const [apiKey, setApiKey] = useLocalStorage(LS_KEY, "");
-      const { data, loading, error } = useFredData(apiKey);
-      const metrics = useMetrics(data);
-      const [selected, setSelected] = useState(null);
-      const lastUpdated = useMemo(() => new Date().toLocaleString(undefined, { hour12: false }), []);
-
-      return (
-        <div className="min-h-screen w-full">
-          <div className="max-w-6xl mx-auto p-4 sm:p-6">
-            <SettingsBar apiKey={apiKey} setApiKey={setApiKey} onRefresh={() => window.location.reload()} />
-            <div className="mt-4 flex items-center justify-between">
-              <div className="text-sm text-neutral-500">{lastUpdated}</div>
-              <div className="text-sm">
-                <span className="px-2 py-1 rounded-full text-xs bg-neutral-200">{loading ? "Loading…" : "Ready"}</span>
-              </div>
-            </div>
-
-            {error && <div className="mt-4 p-3 rounded-lg bg-red-100 text-red-800">Error: {error}. Check your FRED API key.</div>}
-
-            {!apiKey && (
-              <div className="mt-6 p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900">
-                FRED API 키를 입력하고 Refresh를 누르면 지표가 로드됩니다. (무료 키 발급 필요)
-              </div>
-            )}
-
-            <div className="mt-6 grid gap-3">
-              <div className="hidden sm:grid grid-cols-12 gap-2 px-3 py-2 text-xs text-neutral-500">
-                <div className="col-span-5">Indicator</div>
-                <div className="col-span-2">Latest</div>
-                <div className="col-span-2">Δ 1m</div>
-                <div className="col-span-2">Δ 3m</div>
-                <div className="col-span-1 text-right">As of</div>
-              </div>
-              {metrics.map(row => (
-                <button
-                  key={row.key}
-                  onClick={() => setSelected(row)}
-                  className="text-left w-full px-3 py-3 rounded-xl bg-white shadow hover:shadow-md transition-shadow border border-neutral-200"
-                >
-                  {/* Desktop row */}
-                  <div className="hidden sm:grid grid-cols-12 gap-2 items-center">
-                    <div className="col-span-5">
-                      <div className="font-medium">{row.label}</div>
-                      <div className="text-xs text-neutral-500">{row.desc}</div>
-                    </div>
-                    <div className="col-span-2 font-semibold">{row.isPercent ? (row.latest === null ? "–" : `${row.latest.toFixed(1)}%`) : fmt(row.latest)}</div>
-                    <div className={`col-span-2 font-semibold ${row.d1m > 0 ? "text-emerald-600" : row.d1m < 0 ? "text-rose-600" : ""}`}>{row.d1m === null ? "–" : (row.isPercent ? `${row.d1m.toFixed(2)}` : fmt(row.d1m))}</div>
-                    <div className={`col-span-2 font-semibold ${row.d3m > 0 ? "text-emerald-600" : row.d3m < 0 ? "text-rose-600" : ""}`}>{row.d3m === null ? "–" : (row.isPercent ? `${row.d3m.toFixed(2)}` : fmt(row.d3m))}</div>
-                    <div className="col-span-1 text-right text-xs text-neutral-500">{fmtDate(row.asOf)}</div>
-                  </div>
-                  {/* Mobile card */}
-                  <div className="sm:hidden">
-                    <MiniStat label={row.label} value={row.latest} asOf={row.asOf} d1m={row.d1m} d3m={row.d3m} isPercent={row.isPercent} />
-                  </div>
-                </button>
-              ))}
-            </div>
-
-            <div className="mt-8 text-xs text-neutral-500">
-              Source: FRED API. Click a row to open a chart and choose the range.
-            </div>
-          </div>
-
-          <ChartPanel
-            open={!!selected}
-            onClose={() => setSelected(null)}
-            title={selected?.label}
-            series={selected?.observations}
-            isPercent={selected?.isPercent}
-          />
-        </div>
-      );
+      try {
+        status.textContent = "불러오는 중…";
+        const all = await Promise.all(INDICATORS.map(d => fetchFredSeries(d.key, apiKey)));
+        all.forEach((obs, i) => {
+          const def = INDICATORS[i];
+          const m = computeDeltas(obs, def.type);
+          renderRow(tbody, def, m);
+        });
+        status.textContent = "완료";
+        lastUpdated.textContent = new Date().toLocaleString(undefined, { hour12: false });
+      } catch (e) {
+        status.textContent = "오류";
+        errorBox.textContent = "데이터 로드 중 오류: " + (e.message || String(e)) + " (API 키와 네트워크를 확인하세요)";
+        errorBox.classList.remove("hidden");
+      }
     }
 
-    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+    // ===== 이벤트 =====
+    $("#saveBtn").addEventListener("click", () => {
+      const v = $("#apiKeyInput").value.trim();
+      if (!v) return;
+      localStorage.setItem(LS_KEY, v);
+      alert("API 키를 저장했습니다. 이제 '새로고침'을 눌러 데이터를 불러오세요.");
+    });
+    $("#refreshBtn").addEventListener("click", loadAll);
+
+    // 초기 로드
+    loadAll();
   </script>
 </body>
 </html>
