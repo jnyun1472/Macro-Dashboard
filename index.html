@@ -132,27 +132,58 @@
       return (last.value / prev12 - 1) * 100;
     }
 
-    // 🔧 프록시 (임시/테스트용)
-    const USE_PROXY = true;
-    const PROXY = 'https://api.allorigins.win/raw?url=';
+    <script type="module">
 
+    // ✅ 멀티 프록시 폴백 (순서대로 시도)
+    const PROXIES = [
+      (u) => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
+      (u) => 'https://cors.isomorphic-git.org/' + u,
+      (u) => 'https://corsproxy.io/?' + encodeURIComponent(u),
+      (u) => 'https://thingproxy.freeboard.io/fetch/' + u,
+    ];
+  
+    async function tryFetch(url) {
+      const res = await fetch(url, { cache: 'no-store', mode: 'cors', redirect: 'follow' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res;
+    }
+  
+    async function fetchWithFallback(fredUrl) {
+      // 1) 직결 시도
+      try { return await tryFetch(fredUrl); }
+      catch (e) { console.warn('[FRED] direct fetch failed:', e); }
+  
+      // 2) 프록시 순차 시도
+      for (const make of PROXIES) {
+        const proxied = make(fredUrl);
+        try {
+          const r = await tryFetch(proxied);
+          console.info('[FRED] using proxy:', proxied.split('/')[2]);
+          return r;
+        } catch (e) {
+          console.warn('[FRED] proxy failed:', proxied.split('/')[2], e);
+        }
+      }
+      throw new Error('Failed to fetch (all routes). CORS/네트워크 문제일 수 있습니다.');
+    }
+  
     async function fetchFredSeries(seriesId, apiKey, start = START_DATE) {
-      const fredUrl = "https://api.stlouisfed.org/fred/series/observations"
-        + "?series_id=" + encodeURIComponent(seriesId)
-        + "&api_key=" + encodeURIComponent(apiKey)
-        + "&file_type=json"
-        + "&observation_start=" + encodeURIComponent(start);
-
-      const url = USE_PROXY ? (PROXY + encodeURIComponent(fredUrl)) : fredUrl;
-
-      const res = await fetch(url);
-      if (!res.ok) throw new Error("FRED fetch failed: " + seriesId);
-
+      const fredUrl =
+        'https://api.stlouisfed.org/fred/series/observations'
+        + '?series_id=' + encodeURIComponent(seriesId)
+        + '&api_key=' + encodeURIComponent(apiKey)
+        + '&file_type=json'
+        + '&observation_start=' + encodeURIComponent(start);
+  
+      // ⬇️ 여기서 폴백 포함 요청
+      const res = await fetchWithFallback(fredUrl);
+  
       const json = await res.json();
       const obs = (json.observations || [])
-        .filter(o => o.value !== "." && o.value !== null)
+        .filter(o => o.value !== '.' && o.value !== null)
         .map(o => ({ date: o.date, value: parseFloat(o.value) }))
         .filter(o => !Number.isNaN(o.value));
+  
       return obs;
     }
 
